@@ -45,7 +45,7 @@ public class RealWeatherService
 	private static final HttpUrl FORECAST_URL = HttpUrl.get("https://api.open-meteo.com/v1/forecast");
 
 	private static final long RETRY_DELAY_MS = TimeUnit.MINUTES.toMillis(2);
-	private static final int MIN_REFRESH_MINUTES = 5;
+	private static final int MIN_REFRESH_MINUTES = 1;
 
 	private static final Pattern LAT_LON = Pattern.compile("^\\s*(-?\\d{1,2}(?:\\.\\d+)?)\\s*,\\s*(-?\\d{1,3}(?:\\.\\d+)?)\\s*$");
 	private static final Pattern US_ZIP = Pattern.compile("^\\d{5}$");
@@ -76,11 +76,13 @@ public class RealWeatherService
 	/** One reading from the API. Stored raw so config toggles (e.g. stars at night) apply instantly. */
 	private static final class Observation
 	{
+		private final String location;
 		private final int weatherCode;
 		private final boolean isDay;
 
-		private Observation(int weatherCode, boolean isDay)
+		private Observation(String location, int weatherCode, boolean isDay)
 		{
+			this.location = location;
 			this.weatherCode = weatherCode;
 			this.isDay = isDay;
 		}
@@ -115,10 +117,15 @@ public class RealWeatherService
 
 		if (!location.equals(activeLocation))
 		{
+			// New location: look it up right away. The previous weather stays on screen until
+			// the new location's weather arrives, so there's no flash of clear skies in between.
 			activeLocation = location;
 			coordinates = null;
-			latest = null;
 			nextAttemptAtMs = 0;
+			if (location.isEmpty())
+			{
+				latest = null;
+			}
 		}
 
 		if (location.isEmpty() || requestInFlight || System.currentTimeMillis() < nextAttemptAtMs)
@@ -213,33 +220,34 @@ public class RealWeatherService
 			qualifier = location.substring(comma + 1).trim();
 		}
 
-		HttpUrl.Builder url = GEOCODING_URL.newBuilder()
-				.addQueryParameter("name", name)
+		// A bare 5-digit ZIP is searched as "12345, US" so it can't match a European postal code
+		String searchName = US_ZIP.matcher(name).matches() && qualifier.isEmpty() ? name + ", US" : name;
+
+		HttpUrl url = GEOCODING_URL.newBuilder()
+				.addQueryParameter("name", searchName)
 				.addQueryParameter("count", "10")
 				.addQueryParameter("language", "en")
-				.addQueryParameter("format", "json");
-
-		if (US_ZIP.matcher(name).matches())
-		{
-			url.addQueryParameter("countryCode", "US");
-		}
+				.addQueryParameter("format", "json")
+				.build();
 
 		final String finalQualifier = qualifier;
-		get(url.build(), location, json ->
+		get(url, location, json ->
 		{
 			JsonArray results = json.has("results") && json.get("results").isJsonArray() ? json.getAsJsonArray("results") : null;
 			if (results == null || results.size() == 0)
 			{
 				log.warn("Real Weather: couldn't find a place called \"{}\". Try \"City, ST\" or \"latitude, longitude\".", location);
+				clearPreviousLocationWeather();
 				nextAttemptAtMs = System.currentTimeMillis() + refreshIntervalMs();
 				return;
 			}
 
 			JsonObject place = pickPlace(results, finalQualifier);
-			coordinates = new double[]{place.get("latitude").getAsDouble(), place.get("longitude").getAsDouble()};
-			nextAttemptAtMs = 0; // fetch the weather on the next tick
+			double[] found = new double[]{place.get("latitude").getAsDouble(), place.get("longitude").getAsDouble()};
+			coordinates = found;
 			log.info("Real Weather: \"{}\" resolved to {}, {} ({}, {})", location,
-					getString(place, "name"), getString(place, "admin1"), coordinates[0], coordinates[1]);
+					getString(place, "name"), getString(place, "admin1"), found[0], found[1]);
+			requestCurrentWeather(location, found); // straight on to the weather, no waiting for a tick
 		});
 	}
 
@@ -258,12 +266,13 @@ public class RealWeatherService
 			if (current == null || !current.has("weather_code") || current.get("weather_code").isJsonNull())
 			{
 				log.warn("Real Weather: weather response had no current conditions");
+				clearPreviousLocationWeather();
 				return;
 			}
 
 			int code = current.get("weather_code").getAsInt();
 			boolean isDay = !current.has("is_day") || current.get("is_day").isJsonNull() || current.get("is_day").getAsInt() == 1;
-			latest = new Observation(code, isDay);
+			latest = new Observation(location, code, isDay);
 			nextAttemptAtMs = System.currentTimeMillis() + refreshIntervalMs();
 			log.debug("Real Weather: code {} ({}) -> {}", code, isDay ? "day" : "night",
 					mapWeatherCode(code, isDay, config.realWeatherStarsAtNight()));
@@ -279,6 +288,10 @@ public class RealWeatherService
 			public void onFailure(Call call, IOException e)
 			{
 				log.warn("Real Weather: request failed ({})", e.getMessage());
+				if (location.equals(activeLocation))
+				{
+					clearPreviousLocationWeather();
+				}
 				requestInFlight = false;
 			}
 
@@ -296,6 +309,7 @@ public class RealWeatherService
 					if (!r.isSuccessful() || body == null)
 					{
 						log.warn("Real Weather: HTTP {} from {}", r.code(), url.host());
+						clearPreviousLocationWeather();
 						return;
 					}
 
@@ -308,6 +322,7 @@ public class RealWeatherService
 				catch (RuntimeException e)
 				{
 					log.warn("Real Weather: couldn't read response from {}", url.host(), e);
+					clearPreviousLocationWeather();
 				}
 				finally
 				{
@@ -315,6 +330,19 @@ public class RealWeatherService
 				}
 			}
 		});
+	}
+
+	/**
+	 * If the lookup for a newly entered location fails, stop showing the old location's weather.
+	 * A failed routine refresh of the same location keeps the last known weather.
+	 */
+	private void clearPreviousLocationWeather()
+	{
+		Observation observation = latest;
+		if (observation != null && !observation.location.equals(activeLocation))
+		{
+			latest = null;
+		}
 	}
 
 	/** Picks the geocoding result matching the part after the comma ("WV", "West Virginia", "GB", ...). */

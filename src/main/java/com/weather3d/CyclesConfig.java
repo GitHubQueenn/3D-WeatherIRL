@@ -397,12 +397,12 @@ public interface CyclesConfig extends Config {
 	@ConfigItem(
 			keyName = "realWeatherRefreshMinutes",
 			name = "Refresh Every",
-			description = "How often to check the real weather",
+			description = "How often to re-check the weather (changing Location always updates right away)",
 			section = realWeatherSettings,
 			position = 31
 	)
 	@Units(Units.MINUTES)
-	@Range(min = 5, max = 60)
+	@Range(min = 1, max = 60)
 	default int realWeatherRefreshMinutes()
 	{
 		return 10;
