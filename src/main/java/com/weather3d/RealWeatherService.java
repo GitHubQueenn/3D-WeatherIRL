@@ -209,6 +209,33 @@ public class RealWeatherService
 		}
 	}
 
+	/** Human-readable WMO code, for the log. */
+	static String describeWeatherCode(int code)
+	{
+		switch (code)
+		{
+			case 0: return "clear sky";
+			case 1: return "mainly clear";
+			case 2: return "partly cloudy";
+			case 3: return "overcast";
+			case 45: return "fog";
+			case 48: return "rime fog";
+			case 51: case 53: case 55: return "drizzle";
+			case 56: case 57: return "freezing drizzle";
+			case 61: return "light rain";
+			case 63: return "rain";
+			case 65: return "heavy rain";
+			case 66: case 67: return "freezing rain";
+			case 71: case 73: case 75: return "snow";
+			case 77: return "snow grains";
+			case 80: case 81: case 82: return "rain showers";
+			case 85: case 86: return "snow showers";
+			case 95: return "thunderstorm";
+			case 96: case 99: return "thunderstorm with hail";
+			default: return "unknown";
+		}
+	}
+
 	private void requestGeocode(String location)
 	{
 		String name = location;
@@ -274,8 +301,9 @@ public class RealWeatherService
 			boolean isDay = !current.has("is_day") || current.get("is_day").isJsonNull() || current.get("is_day").getAsInt() == 1;
 			latest = new Observation(location, code, isDay);
 			nextAttemptAtMs = System.currentTimeMillis() + refreshIntervalMs();
-			log.debug("Real Weather: code {} ({}) -> {}", code, isDay ? "day" : "night",
-					mapWeatherCode(code, isDay, config.realWeatherStarsAtNight()));
+			Weather shown = mapWeatherCode(code, isDay, config.realWeatherStarsAtNight());
+			log.info("Real Weather: {} reports \"{}\" (code {}, {}) -> showing {}", location, describeWeatherCode(code), code,
+					isDay ? "day" : "night", shown != null ? shown.getName() : "Clear");
 		});
 	}
 
