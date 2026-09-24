@@ -7,6 +7,7 @@ public interface CyclesConfig extends Config {
 
 	enum WeatherType {
 		DYNAMIC,
+		REAL_WEATHER,
 		ASHFALL,
 		CLEAR,
 		CLOUDY,
@@ -370,6 +371,63 @@ public interface CyclesConfig extends Config {
 			position = 28
 	)
 	default boolean enableLightning()
+	{
+		return false;
+	}
+
+	@ConfigSection(
+			name = "Real Weather",
+			description = "Settings for Real Weather mode, which matches in-game Weather to real-life weather at a location you choose",
+			position = 29
+	)
+	String realWeatherSettings = "realWeatherSettings";
+
+	@ConfigItem(
+			keyName = "realWeatherLocation",
+			name = "Location",
+			description = "<html>Where to pull real weather from (used when Weather Type is Real Weather)<br>Examples: Denver, CO &nbsp;|&nbsp; London, GB &nbsp;|&nbsp; 39.74, -104.99<br>Latitude, longitude is the most reliable</html>",
+			section = realWeatherSettings,
+			position = 30
+	)
+	default String realWeatherLocation()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+			keyName = "realWeatherRefreshMinutes",
+			name = "Refresh Every",
+			description = "How often to check the real weather",
+			section = realWeatherSettings,
+			position = 31
+	)
+	@Units(Units.MINUTES)
+	@Range(min = 5, max = 60)
+	default int realWeatherRefreshMinutes()
+	{
+		return 10;
+	}
+
+	@ConfigItem(
+			keyName = "realWeatherKeepSpecialBiomes",
+			name = "Keep Cave & Cosmos Weather",
+			description = "Caves, Lava Caves and otherworldly areas keep their normal in-game weather instead of real-life weather",
+			section = realWeatherSettings,
+			position = 32
+	)
+	default boolean realWeatherKeepSpecialBiomes()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "realWeatherStarsAtNight",
+			name = "Stars On Clear Nights",
+			description = "Shows Star objects when the real sky is clear and it's night at your location",
+			section = realWeatherSettings,
+			position = 33
+	)
+	default boolean realWeatherStarsAtNight()
 	{
 		return false;
 	}

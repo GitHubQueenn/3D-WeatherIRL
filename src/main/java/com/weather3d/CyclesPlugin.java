@@ -61,6 +61,8 @@ public class CyclesPlugin extends Plugin
 	private PluginManager pluginManager;
 	@Inject
 	private ModelHandler modelHandler;
+	@Inject
+	private RealWeatherService realWeatherService;
 
 	private final Random random = new Random();
 	private final ArrayList<WeatherManager> weatherManagerList = new ArrayList<>();
@@ -188,6 +190,17 @@ public class CyclesPlugin extends Plugin
 			Weather nextWeather = syncWeather(currentSeason, currentBiome);
 
 			if (nextWeather != currentWeather)
+			{
+				setConfigWeather();
+				handleWeatherManagers();
+			}
+			conditionsSynced = true;
+		}
+
+		if (config.weatherType() == CyclesConfig.WeatherType.REAL_WEATHER)
+		{
+			realWeatherService.refreshIfDue();
+			if (getRealWeather() != currentWeather)
 			{
 				setConfigWeather();
 				handleWeatherManagers();
@@ -981,6 +994,9 @@ public class CyclesPlugin extends Plugin
 			case DYNAMIC:
 				currentWeather = syncWeather(currentSeason, currentBiome);
 				break;
+			case REAL_WEATHER:
+				currentWeather = getRealWeather();
+				break;
 			case CLOUDY:
 				currentWeather = Weather.CLOUDY;
 				break;
@@ -1006,6 +1022,12 @@ public class CyclesPlugin extends Plugin
 				currentWeather = Weather.STORMY;
 				break;
 		}
+	}
+
+	private Weather getRealWeather()
+	{
+		Weather realWeather = realWeatherService.resolveWeather(currentBiome);
+		return realWeather != null ? realWeather : syncWeather(currentSeason, currentBiome);
 	}
 
 	private Weather syncWeather(Season seasonCondition, Biome biomeCondition)
